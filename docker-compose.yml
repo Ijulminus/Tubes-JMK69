@@ -1,0 +1,230 @@
+version: '3.8'
+
+services:
+  # Auth Service
+  auth-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "4001:4001"
+    environment:
+      DB_NAME: auth_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: auth-db
+      JWT_SECRET: RAHASIA_NEGARA
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    networks:
+      - jmkair-network
+
+  # Flight Schedule Service
+  flight-schedule-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: flight_schedule_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - flight_schedule_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flight-schedule-service:
+    build: ./flight-schedule-service
+    ports:
+      - "4002:4002"
+    environment:
+      DB_NAME: flight_schedule_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: flight-schedule-db
+    depends_on:
+      flight-schedule-db:
+        condition: service_healthy
+    networks:
+      - jmkair-network
+
+  # Flight Booking Service
+  flight-booking-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: flight_booking_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - flight_booking_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flight-booking-service:
+    build: ./flight-booking-service
+    ports:
+      - "4003:4003"
+    environment:
+      DB_NAME: flight_booking_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: flight-booking-db
+      FLIGHT_SCHEDULE_SERVICE: http://flight-schedule-service:4002
+      EXTERNAL_BOOKING_SERVICE: http://external-booking-service:4000
+      KELOMPOK2_BOOKING_SERVICE: http://host.docker.internal:4003
+    depends_on:
+      - flight-booking-db
+      - flight-schedule-service
+      - external-booking-service
+    networks:
+      - jmkair-network
+
+  # Parcel Service
+  parcel-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: parcel_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - parcel_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  parcel-service:
+    build: ./parcel-service
+    ports:
+      - "4004:4004"
+    environment:
+      DB_NAME: parcel_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: parcel-db
+      FLIGHT_BOOKING_SERVICE: http://flight-booking-service:4003
+    depends_on:
+      - parcel-db
+      - flight-booking-service
+    networks:
+      - jmkair-network
+
+  # Onboard Service
+  onboard-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: onboard_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - onboard_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  onboard-service:
+    build: ./onboard-service
+    ports:
+      - "4005:4005"
+    environment:
+      DB_NAME: onboard_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: onboard-db
+      FLIGHT_BOOKING_SERVICE: http://flight-booking-service:4003
+    depends_on:
+      - onboard-db
+      - flight-booking-service
+    networks:
+      - jmkair-network
+
+  # External Booking Service (dari kelompok lain)
+  external-booking-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - external_booking_db_data:/var/lib/postgresql/data
+    networks:
+      - jmkair-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  external-booking-service:
+    build: ./external-booking-service
+    ports:
+      - "5000:4000"  # Map ke port 5000 di host untuk menghindari conflict dengan gateway
+    environment:
+      DB_NAME: booking_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_HOST: external-booking-db
+    depends_on:
+      external-booking-db:
+        condition: service_healthy
+    networks:
+      - jmkair-network
+
+  # GraphQL Gateway
+  graphql-gateway:
+    build: ./graphql-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      JWT_SECRET: RAHASIA_NEGARA
+    depends_on:
+      - auth-service
+      - flight-schedule-service
+      - flight-booking-service
+      - parcel-service
+      - onboard-service
+    networks:
+      - jmkair-network
+
+networks:
+  jmkair-network:
+    driver: bridge
+
+volumes:
+  auth_db_data:
+  flight_schedule_db_data:
+  flight_booking_db_data:
+  parcel_db_data:
+  onboard_db_data:
+  external_booking_db_data:
+

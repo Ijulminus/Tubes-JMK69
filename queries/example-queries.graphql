@@ -1,0 +1,227 @@
+# Example GraphQL Queries untuk JMK AIR System
+
+# ============================================
+# AUTH SERVICE QUERIES
+# ============================================
+
+# Register User
+mutation RegisterUser {
+  register(
+    username: "johndoe"
+    fullName: "John Doe"
+    email: "john@example.com"
+    password: "password123"
+    role: "USER"
+  ) {
+    id
+    username
+    fullName
+    email
+    role
+  }
+}
+
+# Login
+mutation Login {
+  login(username: "johndoe", password: "password123") {
+    token
+    user {
+      id
+      username
+      fullName
+      role
+    }
+  }
+}
+
+# Get User by ID
+query GetUser {
+  userById(id: "1") {
+    id
+    username
+    fullName
+    email
+    role
+    status
+  }
+}
+
+# ============================================
+# FLIGHT SCHEDULE SERVICE QUERIES
+# ============================================
+
+# Get Flight Schedules
+query GetFlightSchedules {
+  flightSchedules(
+    departureLocation: "Jakarta"
+    destinationLocation: "Bandung"
+    departureDate: "2025-01-15"
+  ) {
+    id
+    flightCode
+    aircraftType
+    departureLocation
+    destinationLocation
+    departureTime
+    arrivalTime
+    price
+    availableSeats
+    status
+  }
+}
+
+# Get Flight by Code
+query GetFlightByCode {
+  flightByCode(flightCode: "JMK001") {
+    id
+    flightCode
+    price
+    availableSeats
+    status
+  }
+}
+
+# Create Flight Schedule
+mutation CreateFlightSchedule {
+  createFlightSchedule(
+    flightCode: "JMK001"
+    aircraftType: "Boeing 737"
+    departureLocation: "Jakarta"
+    destinationLocation: "Bandung"
+    departureTime: "2025-01-15T08:00:00Z"
+    arrivalTime: "2025-01-15T09:30:00Z"
+    price: 500000
+    totalSeats: 150
+  ) {
+    id
+    flightCode
+    availableSeats
+  }
+}
+
+# ============================================
+# FLIGHT BOOKING SERVICE QUERIES
+# ============================================
+
+# Create Booking (requires authentication token)
+mutation CreateBooking {
+  createBooking(
+    flightCode: "JMK001"
+    passengerName: "John Doe"
+    numberOfSeats: 2
+    seatNumber: "12A, 12B"
+  ) {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# Get My Bookings (requires authentication token)
+query GetMyBookings {
+  myBookings {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# Confirm Payment (requires authentication token)
+mutation ConfirmPayment {
+  confirmPayment(bookingId: "1", paymentId: "PAY12345") {
+    id
+    status
+    paymentStatus
+    paymentId
+  }
+}
+
+# ============================================
+# PARCEL SERVICE QUERIES
+# ============================================
+
+# Create Parcel Order (requires authentication token)
+mutation CreateParcelOrder {
+  createParcelOrder(
+    bookingId: 1
+    flightCode: "JMK001"
+    senderName: "John Doe"
+    senderAddress: "Jakarta"
+    receiverName: "Jane Doe"
+    receiverAddress: "Bandung"
+    weight: 5.5
+    dimensions: "30x20x15"
+  ) {
+    id
+    flightCode
+    cost
+    status
+    paymentStatus
+  }
+}
+
+# Get My Parcel Orders (requires authentication token)
+query GetMyParcelOrders {
+  myParcelOrders {
+    id
+    flightCode
+    senderName
+    receiverName
+    weight
+    cost
+    status
+  }
+}
+
+# ============================================
+# ONBOARD SERVICE QUERIES
+# ============================================
+
+# Get Menu Items
+query GetMenuItems {
+  menuItems(category: "Food") {
+    id
+    name
+    description
+    category
+    price
+    available
+  }
+}
+
+# Create Onboard Order (requires authentication token)
+mutation CreateOnboardOrder {
+  createOnboardOrder(
+    bookingId: 1
+    items: [
+      { menuItemId: "1", quantity: 2 }
+      { menuItemId: "2", quantity: 1 }
+    ]
+  ) {
+    id
+    flightCode
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# Get My Onboard Orders (requires authentication token)
+query GetMyOnboardOrders {
+  myOnboardOrders {
+    id
+    flightCode
+    totalPrice
+    status
+    items
+  }
+}
+

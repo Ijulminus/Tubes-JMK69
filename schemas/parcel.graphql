@@ -1,0 +1,38 @@
+# Parcel Service GraphQL Schema
+
+type ParcelOrder @key(fields: "id") {
+  id: ID!
+  userId: Int!
+  bookingId: Int
+  flightCode: String!
+  senderName: String!
+  senderAddress: String!
+  receiverName: String!
+  receiverAddress: String!
+  weight: Float!
+  dimensions: String
+  cost: Float!
+  status: String!
+  paymentStatus: String!
+}
+
+type Query {
+  myParcelOrders: [ParcelOrder]
+  parcelOrderById(id: ID!): ParcelOrder
+}
+
+type Mutation {
+  createParcelOrder(
+    bookingId: Int
+    flightCode: String!
+    senderName: String!
+    senderAddress: String!
+    receiverName: String!
+    receiverAddress: String!
+    weight: Float!
+    dimensions: String
+  ): ParcelOrder
+  
+  updateParcelOrderStatus(id: ID!, status: String!): ParcelOrder
+}
+

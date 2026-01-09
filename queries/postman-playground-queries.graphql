@@ -1,0 +1,592 @@
+# GraphQL Queries untuk Postman & GraphQL Playground
+# Copy-paste query ini langsung ke Postman atau GraphQL Playground
+
+# ============================================
+# 1. AUTH SERVICE
+# ============================================
+
+# Register User
+mutation RegisterUser {
+  register(
+    username: "testuser"
+    fullName: "Test User"
+    email: "test@example.com"
+    password: "password123"
+    role: "USER"
+  ) {
+    id
+    username
+    fullName
+    email
+    role
+    status
+  }
+}
+
+# Login (Simpan token untuk request berikutnya!)
+mutation Login {
+  login(username: "testuser", password: "password123") {
+    token
+    user {
+      id
+      username
+      fullName
+      email
+      role
+    }
+  }
+}
+
+# Get User By ID
+query GetUserById {
+  userById(id: "1") {
+    id
+    username
+    fullName
+    email
+    role
+    status
+  }
+}
+
+# Get Current User (Me)
+# Headers: Authorization: Bearer <token>
+query GetMe {
+  me {
+    id
+    username
+    fullName
+    email
+    role
+    status
+  }
+}
+
+# ============================================
+# 2. FLIGHT SCHEDULE SERVICE
+# ============================================
+
+# Create Flight Schedule
+# Headers: Authorization: Bearer <token>
+mutation CreateFlightSchedule {
+  createFlightSchedule(
+    flightCode: "JMK001"
+    aircraftType: "Boeing 737"
+    departureLocation: "Jakarta"
+    destinationLocation: "Bandung"
+    departureTime: "2025-01-15T08:00:00Z"
+    arrivalTime: "2025-01-15T09:30:00Z"
+    price: 500000
+    totalSeats: 150
+  ) {
+    id
+    flightCode
+    aircraftType
+    departureLocation
+    destinationLocation
+    departureTime
+    arrivalTime
+    price
+    totalSeats
+    availableSeats
+    status
+  }
+}
+
+# Get Flight Schedules (Tanpa filter)
+query GetFlightSchedules {
+  flightSchedules {
+    id
+    flightCode
+    departureLocation
+    destinationLocation
+    departureTime
+    arrivalTime
+    price
+    availableSeats
+    status
+  }
+}
+
+# Get Flight Schedules (Dengan filter)
+query GetFlightSchedulesFiltered {
+  flightSchedules(
+    departureLocation: "Jakarta"
+    destinationLocation: "Bandung"
+    departureDate: "2025-01-15"
+  ) {
+    id
+    flightCode
+    departureLocation
+    destinationLocation
+    departureTime
+    arrivalTime
+    price
+    availableSeats
+    status
+  }
+}
+
+# Get Flight By Code
+query GetFlightByCode {
+  flightByCode(flightCode: "JMK001") {
+    id
+    flightCode
+    aircraftType
+    departureLocation
+    destinationLocation
+    departureTime
+    arrivalTime
+    price
+    totalSeats
+    availableSeats
+    status
+  }
+}
+
+# Get Flight By ID
+query GetFlightById {
+  flightById(id: "1") {
+    id
+    flightCode
+    departureLocation
+    destinationLocation
+    price
+    availableSeats
+    status
+  }
+}
+
+# Update Flight Schedule
+# Headers: Authorization: Bearer <token>
+mutation UpdateFlightSchedule {
+  updateFlightSchedule(
+    id: "1"
+    departureTime: "2025-01-15T09:00:00Z"
+    arrivalTime: "2025-01-15T10:30:00Z"
+    price: 600000
+    status: "ACTIVE"
+  ) {
+    id
+    flightCode
+    departureTime
+    arrivalTime
+    price
+    status
+  }
+}
+
+# ============================================
+# 3. FLIGHT BOOKING SERVICE
+# ============================================
+
+# Create Booking (tanpa paymentId)
+# Headers: Authorization: Bearer <token>
+mutation CreateBooking {
+  createBooking(
+    flightCode: "JMK001"
+    passengerName: "John Doe"
+    numberOfSeats: 2
+    seatNumber: "A1, A2"
+  ) {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# Create Booking dengan Payment ID (Recommended) ⭐
+# Headers: Authorization: Bearer <token>
+# Catatan: Booking akan langsung CONFIRMED jika paymentId diberikan
+mutation CreateBookingWithPaymentId {
+  createBooking(
+    flightCode: "JMK001"
+    passengerName: "John Doe"
+    numberOfSeats: 2
+    seatNumber: "A1, A2"
+    paymentId: "PAY12345"  # ← Payment ID langsung di sini
+  ) {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status         # Akan langsung "CONFIRMED"
+    paymentStatus   # Akan langsung "PAID"
+    paymentId       # Akan langsung "PAY12345"
+  }
+}
+
+# Get My Bookings
+# Headers: Authorization: Bearer <token>
+query GetMyBookings {
+  myBookings {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+    createdAt
+  }
+}
+
+# Get Booking By ID
+# Headers: Authorization: Bearer <token>
+query GetBookingById {
+  bookingById(id: "1") {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# Update Booking Status
+# Headers: Authorization: Bearer <token>
+mutation UpdateBookingStatus {
+  updateBookingStatus(id: "1", status: "CANCELLED") {
+    id
+    status
+  }
+}
+
+# Confirm Payment dengan Payment ID
+# Headers: Authorization: Bearer <token>
+mutation ConfirmPayment {
+  confirmPayment(bookingId: "1", paymentId: "PAY12345") {
+    id
+    status
+    paymentStatus
+    paymentId
+  }
+}
+
+# Confirm Payment tanpa Payment ID (jika paymentId sudah ada di booking)
+# Headers: Authorization: Bearer <token>
+# Catatan: Akan menggunakan paymentId yang sudah ada di booking
+mutation ConfirmPaymentWithoutPaymentId {
+  confirmPayment(bookingId: "1") {
+    id
+    status
+    paymentStatus
+    paymentId  # Akan menggunakan paymentId yang sudah ada
+  }
+}
+
+# ============================================
+# 4. PARCEL SERVICE
+# ============================================
+
+# Create Parcel Order
+# Headers: Authorization: Bearer <token>
+mutation CreateParcelOrder {
+  createParcelOrder(
+    bookingId: 1
+    flightCode: "JMK001"
+    senderName: "John Doe"
+    senderAddress: "Jakarta"
+    receiverName: "Jane Doe"
+    receiverAddress: "Bandung"
+    weight: 5.5
+    dimensions: "30x20x15"
+  ) {
+    id
+    flightCode
+    senderName
+    receiverName
+    weight
+    cost
+    status
+  }
+}
+
+# Get My Parcel Orders
+# Headers: Authorization: Bearer <token>
+query GetMyParcelOrders {
+  myParcelOrders {
+    id
+    flightCode
+    senderName
+    receiverName
+    weight
+    cost
+    status
+  }
+}
+
+# Get Parcel Order By ID
+# Headers: Authorization: Bearer <token>
+query GetParcelOrderById {
+  parcelOrderById(id: "1") {
+    id
+    flightCode
+    senderName
+    receiverName
+    weight
+    dimensions
+    cost
+    status
+  }
+}
+
+# ============================================
+# 5. ONBOARD SERVICE
+# ============================================
+
+# Create Menu Item
+# Headers: Authorization: Bearer <token>
+mutation CreateMenuItem {
+  createMenuItem(
+    name: "Nasi Goreng"
+    description: "Nasi goreng spesial"
+    category: "Food"
+    price: 50000
+  ) {
+    id
+    name
+    description
+    category
+    price
+    available
+  }
+}
+
+# Get Menu Items
+query GetMenuItems {
+  menuItems {
+    id
+    name
+    description
+    category
+    price
+    available
+  }
+}
+
+# Get Menu Item By ID
+query GetMenuItemById {
+  menuItemById(id: "1") {
+    id
+    name
+    description
+    category
+    price
+    available
+  }
+}
+
+# Create Onboard Order
+# Headers: Authorization: Bearer <token>
+mutation CreateOnboardOrder {
+  createOnboardOrder(
+    bookingId: 1
+    items: [
+      { menuItemId: "1", quantity: 2 }
+      { menuItemId: "2", quantity: 1 }
+    ]
+  ) {
+    id
+    flightCode
+    totalPrice
+    status
+    items
+  }
+}
+
+# Get My Onboard Orders
+# Headers: Authorization: Bearer <token>
+query GetMyOnboardOrders {
+  myOnboardOrders {
+    id
+    flightCode
+    totalPrice
+    status
+    items
+  }
+}
+
+# ============================================
+# 6. INTEGRASI LINTAS KELOMPOK
+# ============================================
+
+# Get Booking dari Kelompok 2 (IAE_TuBes-front-end)
+# Headers: Authorization: Bearer <token>
+# Prasyarat: Kelompok 2 harus running
+query GetKelompok2Booking {
+  kelompok2BookingById(bookingId: "1") {
+    id
+    userId
+    type
+    hotelName
+    flightCode
+    passengerName
+    status
+  }
+}
+
+# Get External Booking
+# Headers: Authorization: Bearer <token>
+query GetExternalBooking {
+  externalBookingById(externalBookingId: "123") {
+    id
+    bookingCode
+    passengerName
+    status
+    createdAt
+  }
+}
+
+# Sync External Booking
+# Headers: Authorization: Bearer <token>
+mutation SyncExternalBooking {
+  syncExternalBooking(externalBookingId: "123") {
+    id
+    flightCode
+    passengerName
+    status
+    externalBookingId
+  }
+}
+
+# ============================================
+# COMPLETE FLOW EXAMPLE
+# ============================================
+
+# Step 1: Register
+mutation Step1_Register {
+  register(
+    username: "testuser"
+    fullName: "Test User"
+    email: "test@example.com"
+    password: "password123"
+  ) {
+    id
+    username
+  }
+}
+
+# Step 2: Login (Simpan token!)
+mutation Step2_Login {
+  login(username: "testuser", password: "password123") {
+    token
+    user {
+      id
+    }
+  }
+}
+
+# Step 3: Create Flight Schedule
+# Headers: Authorization: Bearer <token_dari_step_2>
+mutation Step3_CreateFlightSchedule {
+  createFlightSchedule(
+    flightCode: "JMK001"
+    aircraftType: "Boeing 737"
+    departureLocation: "Jakarta"
+    destinationLocation: "Bandung"
+    departureTime: "2025-01-15T08:00:00Z"
+    arrivalTime: "2025-01-15T09:30:00Z"
+    price: 500000
+    totalSeats: 150
+  ) {
+    id
+    flightCode
+    availableSeats
+  }
+}
+
+# Step 4: Create Booking dengan Payment ID (Recommended) ⭐
+# Headers: Authorization: Bearer <token>
+# Catatan: Booking akan langsung CONFIRMED
+mutation Step4_CreateBookingWithPaymentId {
+  createBooking(
+    flightCode: "JMK001"
+    passengerName: "Test User"
+    numberOfSeats: 2
+    paymentId: "PAY-2025-001"  # ← Payment ID langsung di sini
+  ) {
+    id
+    flightCode
+    totalPrice
+    status         # CONFIRMED
+    paymentStatus   # PAID
+    paymentId       # PAY-2025-001
+  }
+}
+
+# Atau Create Booking tanpa Payment ID (lalu confirm payment di step 5)
+mutation Step4_CreateBooking {
+  createBooking(
+    flightCode: "JMK001"
+    passengerName: "Test User"
+    numberOfSeats: 2
+  ) {
+    id
+    flightCode
+    totalPrice
+    status
+    paymentStatus  # UNPAID
+  }
+}
+
+# Step 5: Confirm Payment (jika belum memberikan paymentId di step 4)
+# Headers: Authorization: Bearer <token>
+# Catatan: Jika sudah memberikan paymentId di step 4, step ini tidak perlu
+mutation Step5_ConfirmPayment {
+  confirmPayment(bookingId: "1", paymentId: "PAY12345") {
+    id
+    status
+    paymentStatus
+  }
+}
+
+# ============================================
+# QUERY DENGAN VARIABLES (Untuk Postman)
+# ============================================
+
+# Contoh: Get Booking dengan Variables
+# Variables:
+# {
+#   "id": "1"
+# }
+query GetBookingWithVariables($id: ID!) {
+  bookingById(id: $id) {
+    id
+    flightCode
+    passengerName
+    status
+  }
+}
+
+# Contoh: Create Booking dengan Variables
+# Variables:
+# {
+#   "flightCode": "JMK001",
+#   "passengerName": "John Doe",
+#   "numberOfSeats": 2
+# }
+mutation CreateBookingWithVariables(
+  $flightCode: String!
+  $passengerName: String!
+  $numberOfSeats: Int!
+) {
+  createBooking(
+    flightCode: $flightCode
+    passengerName: $passengerName
+    numberOfSeats: $numberOfSeats
+  ) {
+    id
+    flightCode
+    totalPrice
+    status
+  }
+}
+

@@ -1,0 +1,127 @@
+# Contoh Queries untuk Integrasi Lintas Kelompok
+
+# ============================================
+# SEBAGAI CONSUMER - Mengkonsumsi Endpoint Kelompok Lain
+# ============================================
+
+# 1. Mengambil booking dari kelompok lain
+# Query ini memanggil External Booking Service untuk mendapatkan data booking
+query GetExternalBooking {
+  externalBookingById(externalBookingId: "123") {
+    id
+    bookingCode
+    passengerName
+    status
+    createdAt
+  }
+}
+
+# 2. Sinkronisasi booking dari kelompok lain ke sistem JMK AIR
+# Mutation ini mengambil booking dari kelompok lain dan menyimpannya di sistem kita
+mutation SyncExternalBooking {
+  syncExternalBooking(externalBookingId: "123") {
+    id
+    flightCode
+    passengerName
+    status
+    externalBookingId
+  }
+}
+
+# ============================================
+# SEBAGAI PROVIDER - Endpoint untuk Kelompok Lain
+# ============================================
+
+# 1. Auth Service - Get User by ID
+# Endpoint ini dapat digunakan oleh kelompok lain untuk validasi user
+query GetUserForExternal {
+  userById(id: "1") {
+    id
+    username
+    fullName
+    email
+    role
+    status
+  }
+}
+
+# 2. Auth Service - Get Current User (Me)
+# Endpoint ini memerlukan JWT token
+query GetMeForExternal {
+  me {
+    id
+    username
+    fullName
+    email
+    role
+  }
+}
+
+# 3. Flight Booking Service - Get Booking by ID
+# Endpoint ini dapat digunakan oleh kelompok lain untuk melihat booking di sistem JMK AIR
+query GetBookingForExternal {
+  bookingById(id: "1") {
+    id
+    flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+
+# ============================================
+# CONTOH REQUEST DARI KELOMPOK LAIN
+# ============================================
+
+# Contoh: Kelompok lain memanggil Auth Service JMK AIR
+# POST http://auth-service:4001
+# Headers: 
+#   Content-Type: application/json
+#   Authorization: Bearer <token> (optional untuk userById, required untuk me)
+
+# Request Body:
+{
+  "query": "query { userById(id: \"1\") { id username fullName role } }"
+}
+
+# Response:
+{
+  "data": {
+    "userById": {
+      "id": "1",
+      "username": "johndoe",
+      "fullName": "John Doe",
+      "role": "USER"
+    }
+  }
+}
+
+# ============================================
+# CONTOH: JMK AIR MEMANGGIL KELOMPOK LAIN
+# ============================================
+
+# Contoh: Flight Booking Service memanggil External Booking Service
+# POST http://external-booking-service:4000
+# Headers:
+#   Content-Type: application/json
+#   Authorization: Bearer <token> (jika diperlukan)
+
+# Request Body:
+{
+  "query": "query { bookingById(id: \"123\") { id bookingCode passengerName status } }"
+}
+
+# Response:
+{
+  "data": {
+    "bookingById": {
+      "id": "123",
+      "bookingCode": "EXT-BK-001",
+      "passengerName": "John Doe",
+      "status": "CONFIRMED"
+    }
+  }
+}
+

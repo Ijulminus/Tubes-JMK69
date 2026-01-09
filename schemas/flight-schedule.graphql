@@ -1,0 +1,51 @@
+# Flight Schedule Service GraphQL Schema
+
+type FlightSchedule @key(fields: "id") {
+  id: ID!
+  flightCode: String!
+  aircraftType: String!
+  departureLocation: String!
+  destinationLocation: String!
+  departureTime: String!
+  arrivalTime: String!
+  price: Float!
+  totalSeats: Int!
+  availableSeats: Int!
+  status: String!
+}
+
+type Query {
+  flightSchedules(
+    departureLocation: String
+    destinationLocation: String
+    departureDate: String
+  ): [FlightSchedule]
+  flightById(id: ID!): FlightSchedule
+  flightByCode(flightCode: String!): FlightSchedule
+}
+
+type Mutation {
+  createFlightSchedule(
+    flightCode: String!
+    aircraftType: String!
+    departureLocation: String!
+    destinationLocation: String!
+    departureTime: String!
+    arrivalTime: String!
+    price: Float!
+    totalSeats: Int!
+  ): FlightSchedule
+  
+  updateFlightSchedule(
+    id: ID!
+    departureTime: String
+    arrivalTime: String
+    price: Float
+    totalSeats: Int
+    status: String
+  ): FlightSchedule
+  
+  decreaseAvailableSeats(flightCode: String!, seats: Int!): FlightSchedule
+  increaseAvailableSeats(flightCode: String!, seats: Int!): FlightSchedule
+}
+

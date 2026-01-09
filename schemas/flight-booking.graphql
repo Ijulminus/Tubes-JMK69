@@ -1,0 +1,49 @@
+# Flight Booking Service GraphQL Schema
+
+type Booking @key(fields: "id") {
+  id: ID!
+  userId: Int!
+  flightCode: String!
+  flightId: Int
+  passengerName: String!
+  seatNumber: String
+  numberOfSeats: Int!
+  totalPrice: Float!
+  status: String!
+  paymentStatus: String!
+  paymentId: String
+  externalBookingId: String  # ID booking dari kelompok lain untuk integrasi lintas kelompok
+}
+
+# Type untuk informasi booking dari kelompok lain
+type ExternalBookingInfo {
+  id: ID!
+  bookingCode: String
+  passengerName: String!
+  status: String!
+  createdAt: String
+}
+
+type Query {
+  myBookings: [Booking]
+  bookingById(id: ID!): Booking
+  # Query untuk integrasi lintas kelompok - mengambil booking dari kelompok lain
+  externalBookingById(externalBookingId: ID!): ExternalBookingInfo
+}
+
+type Mutation {
+  createBooking(
+    flightCode: String!
+    passengerName: String!
+    numberOfSeats: Int!
+    seatNumber: String
+  ): Booking
+  
+  updateBookingStatus(id: ID!, status: String!): Booking
+  
+  confirmPayment(bookingId: ID!, paymentId: String!): Booking
+  
+  # Mutation untuk integrasi lintas kelompok - sinkronisasi booking dari kelompok lain
+  syncExternalBooking(externalBookingId: ID!): Booking
+}
+
