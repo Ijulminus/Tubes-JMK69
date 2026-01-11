@@ -2,12 +2,14 @@
 const { ApolloServer, gql } = require('apollo-server');
 const { buildSubgraphSchema } = require('@apollo/subgraph');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
 const { connectDB } = require('./db');
 const OnboardOrder = require('./models/OnboardOrder');
 const MenuItem = require('./models/MenuItem');
 
 connectDB();
 
+const JWT_SECRET = process.env.JWT_SECRET || 'RAHASIA_NEGARA';
 const FLIGHT_BOOKING_SERVICE = process.env.FLIGHT_BOOKING_SERVICE || 'http://flight-booking-service:4003';
 
 const typeDefs = gql`
@@ -50,24 +52,26 @@ const typeDefs = gql`
       category: String!
       price: Float!
     ): MenuItem
-    
+
     createOnboardOrder(
       bookingId: Int!
       items: [OrderItemInput!]!
     ): OnboardOrder
-    
+
     updateOnboardOrderStatus(id: ID!, status: String!): OnboardOrder
   }
 `;
 
+function requireAuth(context) {
+  if (context.isAuthenticated !== true) throw new Error('Unauthorized');
+}
+
 // Helper function untuk validasi booking
-async function validateBooking(bookingId, userId) {
+async function validateBooking(bookingId, authorization) {
   try {
-    const headers = {
-      'Content-Type': 'application/json',
-      'user-id': userId.toString()
-    };
-    
+    const headers = { 'Content-Type': 'application/json' };
+    if (authorization) headers['authorization'] = authorization;
+
     const response = await axios.post(
       `${FLIGHT_BOOKING_SERVICE}`,
       {
@@ -84,18 +88,13 @@ async function validateBooking(bookingId, userId) {
       },
       { headers }
     );
-    
-    if (response.data.errors) {
-      throw new Error(response.data.errors[0].message);
-    }
-    
-    if (!response.data.data || !response.data.data.bookingById) {
-      throw new Error('Booking tidak ditemukan');
-    }
-    
+
+    if (response.data.errors) throw new Error(response.data.errors[0].message);
+    if (!response.data.data?.bookingById) throw new Error('Booking tidak ditemukan');
+
     return response.data.data.bookingById;
   } catch (error) {
-    if (error.response && error.response.data && error.response.data.errors) {
+    if (error.response?.data?.errors?.length) {
       throw new Error(`Booking tidak valid: ${error.response.data.errors[0].message}`);
     }
     if (error.code === 'ECONNREFUSED') {
@@ -107,60 +106,61 @@ async function validateBooking(bookingId, userId) {
 
 const resolvers = {
   Query: {
-    menuItems: async (_, { category }) => {
-      const where = {};
-      if (category) {
-        where.category = category;
-      }
-      where.available = true;
+    menuItems: async (_, { category }, context) => {
+      requireAuth(context);
+
+      const where = { available: true };
+      if (category) where.category = category;
       return await MenuItem.findAll({ where });
     },
-    menuItemById: async (_, { id }) => {
+
+    menuItemById: async (_, { id }, context) => {
+      requireAuth(context);
+
       const item = await MenuItem.findByPk(id);
       if (!item) throw new Error('Menu item tidak ditemukan');
       return item;
     },
+
     myOnboardOrders: async (_, __, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
+      requireAuth(context);
       return await OnboardOrder.findAll({ where: { userId: context.userId } });
     },
+
     onboardOrderById: async (_, { id }, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
+      requireAuth(context);
+
       const order = await OnboardOrder.findByPk(id);
-      if (!order || order.userId !== context.userId) {
-        throw new Error('Onboard order tidak ditemukan');
-      }
+      if (!order || order.userId !== context.userId) throw new Error('Onboard order tidak ditemukan');
       return order;
     }
   },
+
   Mutation: {
-    createMenuItem: async (_, args) => {
+    createMenuItem: async (_, args, context) => {
+      requireAuth(context);
       const menuItem = await MenuItem.create(args);
       return menuItem;
     },
-    
+
     createOnboardOrder: async (_, { bookingId, items }, context) => {
-      if (!context.userId) throw new Error('Anda harus login!');
-      
-      // Validasi booking
-      const booking = await validateBooking(bookingId, context.userId);
-      if (booking.status !== 'CONFIRMED') {
-        throw new Error('Booking harus dalam status CONFIRMED');
-      }
-      
-      // Validasi dan hitung total harga
+      requireAuth(context);
+
+      const booking = await validateBooking(bookingId, context.authorization);
+      if (booking.status !== 'CONFIRMED') throw new Error('Booking harus dalam status CONFIRMED');
+
       let totalPrice = 0;
       const orderItems = [];
-      
+
       for (const item of items) {
         const menuItem = await MenuItem.findByPk(item.menuItemId);
         if (!menuItem || !menuItem.available) {
           throw new Error(`Menu item ${item.menuItemId} tidak tersedia`);
         }
-        
+
         const itemTotal = parseFloat(menuItem.price) * item.quantity;
         totalPrice += itemTotal;
-        
+
         orderItems.push({
           menuItemId: menuItem.id,
           name: menuItem.name,
@@ -169,8 +169,7 @@ const resolvers = {
           subtotal: itemTotal
         });
       }
-      
-      // Buat onboard order
+
       const onboardOrder = await OnboardOrder.create({
         userId: context.userId,
         bookingId,
@@ -180,21 +179,18 @@ const resolvers = {
         status: 'PENDING',
         paymentStatus: 'UNPAID'
       });
-      
+
       return onboardOrder;
     },
-    
+
     updateOnboardOrderStatus: async (_, { id, status }, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
-      
+      requireAuth(context);
+
       const order = await OnboardOrder.findByPk(id);
-      if (!order || order.userId !== context.userId) {
-        throw new Error('Onboard order tidak ditemukan');
-      }
-      
+      if (!order || order.userId !== context.userId) throw new Error('Onboard order tidak ditemukan');
+
       order.status = status;
       await order.save();
-      
       return order;
     }
   }
@@ -203,11 +199,24 @@ const resolvers = {
 const server = new ApolloServer({
   schema: buildSubgraphSchema({ typeDefs, resolvers }),
   context: ({ req }) => {
-    return { userId: req.headers['user-id'] };
+    const authorization = req.headers.authorization || '';
+    if (!authorization) return { userId: null, userRole: null, isAuthenticated: false, authorization: '' };
+
+    try {
+      const token = authorization.replace(/^Bearer\s+/i, '');
+      const decoded = jwt.verify(token, JWT_SECRET);
+      return {
+        userId: decoded.id ?? decoded.userId,
+        userRole: decoded.role,
+        isAuthenticated: true,
+        authorization: `Bearer ${token}`
+      };
+    } catch (e) {
+      return { userId: null, userRole: null, isAuthenticated: false, authorization };
+    }
   }
 });
 
-server.listen({ port: 4005 }).then(({ url }) => {
+server.listen({ port: 4005, host: '0.0.0.0' }).then(({ url }) => {
   console.log(`🚀 Onboard Service ready at ${url}`);
 });
-

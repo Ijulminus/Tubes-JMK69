@@ -60,6 +60,9 @@ services:
       DB_USER: user
       DB_PASS: pass
       DB_HOST: flight-schedule-db
+      JWT_SECRET: ${JWT_SECRET:-RAHASIA_NEGARA}
+      # Shared API key (harus sama dengan PARTNER_API_KEY di Travel-app)
+      PARTNER_API_KEY: ${PARTNER_API_KEY:-PARTNER_SECRET}
     depends_on:
       flight-schedule-db:
         condition: service_healthy
@@ -94,7 +97,13 @@ services:
       DB_HOST: flight-booking-db
       FLIGHT_SCHEDULE_SERVICE: http://flight-schedule-service:4002
       EXTERNAL_BOOKING_SERVICE: http://external-booking-service:4000
-      KELOMPOK2_BOOKING_SERVICE: http://host.docker.internal:4003
+      # Integrasi lintas laptop: set ke http://<IP_LAPTOP_TRAVELAPP>:4003
+      KELOMPOK2_BOOKING_SERVICE: ${KELOMPOK2_BOOKING_SERVICE:-http://host.docker.internal:4003}
+      # Shared API key (harus sama dengan PARTNER_API_KEY di Travel-app)
+      PARTNER_API_KEY: ${PARTNER_API_KEY:-PARTNER_SECRET}
+      # userId default untuk booking external (karena schema userId harus Int)
+      EXTERNAL_DEFAULT_USER_ID: ${EXTERNAL_DEFAULT_USER_ID:-0}
+      JWT_SECRET: ${JWT_SECRET:-RAHASIA_NEGARA}
     depends_on:
       - flight-booking-db
       - flight-schedule-service
@@ -129,6 +138,7 @@ services:
       DB_PASS: pass
       DB_HOST: parcel-db
       FLIGHT_BOOKING_SERVICE: http://flight-booking-service:4003
+      JWT_SECRET: ${JWT_SECRET:-RAHASIA_NEGARA}
     depends_on:
       - parcel-db
       - flight-booking-service
@@ -162,6 +172,7 @@ services:
       DB_PASS: pass
       DB_HOST: onboard-db
       FLIGHT_BOOKING_SERVICE: http://flight-booking-service:4003
+      JWT_SECRET: ${JWT_SECRET:-RAHASIA_NEGARA}
     depends_on:
       - onboard-db
       - flight-booking-service
@@ -215,6 +226,23 @@ services:
       - onboard-service
     networks:
       - jmkair-network
+
+
+
+  # Public Edge Proxy (untuk ngrok / akses internet)
+  # Expose 8080:8080, lalu tunnel-kan port 8080 saja.
+  edge-proxy:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./edge-proxy/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - flight-schedule-service
+      - flight-booking-service
+    networks:
+      - jmkair-network
+    restart: unless-stopped
 
 networks:
   jmkair-network:

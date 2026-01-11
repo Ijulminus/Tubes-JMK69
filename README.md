@@ -1,282 +1,614 @@
-# Sistem Integrasi Aplikasi Enterprise JMK AIR
+# TUBES JS v2.5 (Maskapai) — Dokumentasi Final
 
-Sistem Aplikasi Integrasi JMK AIR berbasis airline yang dibangun menggunakan pendekatan microservices dan berkomunikasi melalui GraphQL di atas HTTP, serta di deploy secara terisolasi menggunakan Docker.
+Repo ini berisi sistem **Maskapai** berbasis **microservices** (Node.js + PostgreSQL) yang terhubung lewat **Apollo GraphQL Federation**.
 
-## Arsitektur Sistem
+Komponen:
+- **graphql-gateway**: 1 endpoint GraphQL gabungan
+- Subgraph services:
+  - **auth-service** (JWT)
+  - **flight-schedule-service** (jadwal penerbangan)
+  - **flight-booking-service** (booking + pembayaran + sinkronisasi booking partner)
+  - **parcel-service** (pengiriman paket)
+  - **onboard-service** (menu & order makanan dalam pesawat)
+- **external-booking-service**: service GraphQL terpisah (bukan bagian federation) untuk simulasi/partner eksternal
+- **edge-proxy (nginx)**: reverse proxy opsional untuk mempermudah expose via internet (ngrok)
 
-Sistem terdiri dari 5 microservices utama:
+---
 
-1. **Auth Service** (Port 4001) - Pusat autentikasi dan manajemen pengguna dengan JWT
-2. **Flight Schedule Service** (Port 4002) - Pengelolaan jadwal penerbangan dan ketersediaan kursi
-3. **Flight Booking Service** (Port 4003) - Pemesanan tiket dan proses pembayaran
-4. **Parcel Service** (Port 4004) - Layanan pengiriman logistik udara
-5. **Onboard Service** (Port 4005) - Pemesanan layanan dalam penerbangan (makanan/minuman)
+## 1) Prasyarat
+- Docker Desktop (Windows/Mac/Linux) + Docker Compose
+- Port tidak bentrok: `4000-4005`, `5000`, `8080`
+- (Opsional, untuk integrasi jarak jauh) akun **ngrok** + ngrok agent
 
-**GraphQL Gateway** (Port 4000) - Gateway terpusat untuk mengakses semua service
+---
 
-## Teknologi yang Digunakan
+## 2) Struktur Folder (ringkas)
+- `docker-compose.yml` — menjalankan semua service + DB
+- `graphql-gateway/` — Apollo Gateway (federation)
+- `auth-service/` — login/register JWT
+- `flight-schedule-service/` — jadwal penerbangan
+- `flight-booking-service/` — booking flight + sync partner
+- `parcel-service/` — parcel order
+- `onboard-service/` — onboard menu & order
+- `external-booking-service/` — mock/partner booking service
+- `edge-proxy/` — nginx config untuk port 8080
 
-- **Node.js** dengan **Apollo Server** dan **GraphQL**
-- **PostgreSQL** sebagai database untuk setiap service
-- **Docker** dan **Docker Compose** untuk deployment
-- **JWT** untuk autentikasi
-- **Sequelize** sebagai ORM
+---
 
-## Struktur Proyek
+## 3) Daftar Service & Port
 
-```
-TUBES js/
-├── auth-service/              # Auth Service
-│   ├── models/
-│   │   └── User.js
-│   ├── db.js
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── flight-schedule-service/   # Flight Schedule Service
-│   ├── models/
-│   │   └── FlightSchedule.js
-│   ├── db.js
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── flight-booking-service/    # Flight Booking Service
-│   ├── models/
-│   │   └── Booking.js
-│   ├── db.js
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── parcel-service/           # Parcel Service
-│   ├── models/
-│   │   └── ParcelOrder.js
-│   ├── db.js
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── onboard-service/          # Onboard Service
-│   ├── models/
-│   │   ├── OnboardOrder.js
-│   │   └── MenuItem.js
-│   ├── db.js
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── graphql-gateway/          # GraphQL Gateway
-│   ├── index.js
-│   ├── package.json
-│   └── Dockerfile
-├── schemas/                  # GraphQL Schema Files
-│   ├── auth.graphql
-│   ├── flight-schedule.graphql
-│   ├── flight-booking.graphql
-│   ├── parcel.graphql
-│   └── onboard.graphql
-├── queries/                   # Example Queries
-│   └── example-queries.graphql
-├── docker-compose.yml
-└── README.md
-```
+| Service | Host Port | Keterangan |
+|---|---:|---|
+| graphql-gateway | `4000` | Endpoint utama untuk client (federation) |
+| auth-service | `4001` | Register/Login + Query user |
+| flight-schedule-service | `4002` | Jadwal penerbangan |
+| flight-booking-service | `4003` | Booking + pembayaran + sinkronisasi partner |
+| parcel-service | `4004` | Parcel order |
+| onboard-service | `4005` | Menu & order onboard |
+| external-booking-service | `5000` | Mock/partner booking service (container:4000) |
+| edge-proxy (nginx) | `8080` | Reverse proxy `/schedule/` & `/booking/` + `/healthz` |
 
-## Cara Menjalankan
+Semua service GraphQL (kecuali nginx) memakai endpoint HTTP di root path `/`.
 
-### Prasyarat
+---
 
-- Docker dan Docker Compose terinstall
-- Port 4000-4005 tersedia
+## 4) Konfigurasi Environment (.env)
 
-### Langkah-langkah
+Di root repo, buat file `.env` dari `.env.example`:
 
-1. Clone atau download repository ini
-
-2. Jalankan semua service dengan Docker Compose:
 ```bash
-docker-compose up --build
+# Windows PowerShell
+copy .env.example .env
+
+# macOS/Linux
+cp .env.example .env
 ```
 
-3. Tunggu hingga semua service siap (biasanya 30-60 detik)
+Isi penting:
+- `JWT_SECRET` — secret JWT (harus sama antara `auth-service` dan `graphql-gateway`)
+- `PARTNER_API_KEY` — dipakai untuk query partner di `flight-booking-service` (header `x-api-key`)
+- `KELOMPOK2_BOOKING_SERVICE` — URL booking service partner (Travel App / kelompok lain)
+- `EXTERNAL_DEFAULT_USER_ID` — default `userId` untuk booking yang di-import (jika sumber tidak punya userId)
 
-4. Akses GraphQL Gateway di:
-   - **URL**: http://localhost:4000
-   - **GraphQL Playground**: http://localhost:4000/graphql
+> Catatan: `external-booking-service` default jalan di docker network, jadi `flight-booking-service` mengaksesnya lewat `http://external-booking-service:4000` (sudah di-set di docker-compose).
 
-5. Akses individual service (opsional):
-   - Auth Service: http://localhost:4001/graphql
-   - Flight Schedule Service: http://localhost:4002/graphql
-   - Flight Booking Service: http://localhost:4003/graphql
-   - Parcel Service: http://localhost:4004/graphql
-   - Onboard Service: http://localhost:4005/graphql
+---
 
-## Contoh Penggunaan
+## 5) Menjalankan Semua Service (Docker)
 
-### 1. Register User
+Jalankan dari folder yang berisi `docker-compose.yml`:
 
+```bash
+docker compose up --build
+```
+
+Cek container:
+
+```bash
+docker compose ps
+```
+
+Cek edge-proxy healthcheck:
+- Buka `http://localhost:8080/healthz` → harusnya menampilkan `ok`
+
+> Kalau `http://localhost:8080/healthz` malah 404 dari Apache/IIS, berarti port 8080 dipakai service lain. Matikan dulu (contoh: Apache di XAMPP).
+
+---
+
+## 6) Cara Mengakses GraphQL
+
+### Opsi A — via Gateway (disarankan)
+- Endpoint: `http://localhost:4000/`
+- Untuk operasi yang butuh login, kirim header:
+  - `Authorization: Bearer <TOKEN_JWT>`
+
+Gateway akan decode JWT dan meneruskan `user-id` ke subgraph yang butuh.
+
+### Opsi B — akses subgraph langsung (untuk debug)
+Kalau hit endpoint subgraph secara langsung, beberapa service **tidak** decode JWT, jadi Anda perlu kirim header:
+- `user-id: <angka>`
+
+Service yang biasanya butuh `user-id`:
+- `flight-booking-service` (untuk `createBooking`, `bookings`, dll)
+- `parcel-service`
+- `onboard-service`
+- `external-booking-service`
+
+### Opsi C — Apollo Sandbox
+Buka `https://studio.apollographql.com/sandbox/explorer`, lalu ganti endpoint ke salah satu URL di atas.
+
+---
+
+## 7) Header Penting
+
+| Header | Dipakai untuk | Contoh |
+|---|---|---|
+| `Authorization` | Gateway (JWT) | `Bearer eyJ...` |
+| `user-id` | Akses subgraph langsung / external-booking-service | `1` |
+| `x-api-key` | Query partner (flight-booking-service) | `PARTNER_SECRET` |
+
+---
+
+## 8) Referensi Query/Mutation Lengkap
+
+### 8.1 Auth Service (juga tersedia lewat Gateway)
+Endpoint (direct): `http://localhost:4001/`
+
+#### Register
 ```graphql
 mutation {
   register(
-    username: "johndoe"
-    fullName: "John Doe"
-    email: "john@example.com"
-    password: "password123"
+    fullName: "Budi"
+    username: "budi"
+    email: "budi@mail.com"
+    password: "123456"
+    role: "USER"
   ) {
-    id
-    username
-    email
-  }
-}
-```
-
-### 2. Login
-
-```graphql
-mutation {
-  login(username: "johndoe", password: "password123") {
     token
-    user {
-      id
-      username
-      role
-    }
+    user { id fullName username email role }
   }
 }
 ```
 
-### 3. Create Flight Schedule (dengan token)
-
+#### Login
 ```graphql
 mutation {
-  createFlightSchedule(
-    flightCode: "JMK001"
-    aircraftType: "Boeing 737"
-    departureLocation: "Jakarta"
-    destinationLocation: "Bandung"
-    departureTime: "2025-01-15T08:00:00Z"
-    arrivalTime: "2025-01-15T09:30:00Z"
-    price: 500000
-    totalSeats: 150
+  login(username: "budi", password: "123456") {
+    token
+    user { id fullName username email role }
+  }
+}
+```
+
+#### Me (butuh Authorization)
+```graphql
+query {
+  me { id fullName username email role }
+}
+```
+
+#### userById
+```graphql
+query {
+  userById(id: 1) { id fullName username email role }
+}
+```
+
+---
+
+### 8.2 Flight Schedule Service (juga tersedia lewat Gateway)
+Endpoint (direct): `http://localhost:4002/`
+
+#### Lihat semua jadwal
+```graphql
+query {
+  airlineFlightSchedules {
+    id
+    flightCode
+    origin
+    destination
+    departureTime
+    arrivalTime
+    price
+    seatsAvailable
+    status
+  }
+}
+```
+
+#### Ambil jadwal by code
+```graphql
+query {
+  airlineFlightByCode(flightCode: "GA-123") {
+    id
+    flightCode
+    origin
+    destination
+    seatsAvailable
+    status
+  }
+}
+```
+
+#### Cari jadwal (origin + destination)
+```graphql
+query {
+  searchFlightSchedules(origin: "CGK", destination: "DPS") {
+    flightCode
+    departureTime
+    price
+    seatsAvailable
+  }
+}
+```
+
+#### Tambah jadwal (admin/opsional)
+```graphql
+mutation {
+  addFlightSchedule(
+    input: {
+      flightCode: "GA-123"
+      origin: "CGK"
+      destination: "DPS"
+      departureTime: "2026-01-15T08:00:00Z"
+      arrivalTime: "2026-01-15T10:00:00Z"
+      price: 1200000
+      seatsAvailable: 180
+      status: "ACTIVE"
+    }
   ) {
     id
     flightCode
-    availableSeats
   }
 }
 ```
 
-### 4. Create Booking (dengan token)
-
-Set header Authorization:
+#### Update status flight
+```graphql
+mutation {
+  updateFlightStatus(flightCode: "GA-123", status: "DELAYED") {
+    flightCode
+    status
+  }
+}
 ```
-Authorization: Bearer <token_dari_login>
-```
 
+> `decreaseSeats(flightCode, seats)` biasanya dipanggil internal dari booking service.
+
+---
+
+### 8.3 Flight Booking Service (juga tersedia lewat Gateway)
+Endpoint (direct): `http://localhost:4003/`
+
+> Jika akses **via gateway**: gunakan `Authorization: Bearer <token>`.
+> Jika akses **langsung** ke 4003: gunakan `user-id: <id>` untuk operasi yang butuh user.
+
+#### Membuat booking
 ```graphql
 mutation {
   createBooking(
-    flightCode: "JMK001"
-    passengerName: "John Doe"
-    numberOfSeats: 2
+    flightCode: "GA-123"
+    passengerName: "Budi"
+    numberOfSeats: 1
   ) {
     id
     flightCode
+    passengerName
+    numberOfSeats
+    totalPrice
+    status
+    paymentStatus
+  }
+}
+```
+
+#### List booking milik user
+```graphql
+query {
+  bookings {
+    id
+    flightCode
+    passengerName
+    status
+    paymentStatus
+    externalBookingId
+  }
+}
+```
+
+#### bookingById
+```graphql
+query {
+  bookingById(id: 1) {
+    id
+    flightCode
+    passengerName
+    status
+    paymentStatus
+  }
+}
+```
+
+#### bookingByFlightCode
+```graphql
+query {
+  bookingByFlightCode(flightCode: "GA-123") {
+    id
+    passengerName
+    status
+  }
+}
+```
+
+#### Update status booking
+```graphql
+mutation {
+  updateBookingStatus(id: 1, status: "CANCELLED") {
+    id
+    status
+  }
+}
+```
+
+#### Konfirmasi pembayaran
+```graphql
+mutation {
+  confirmPayment(id: 1) {
+    id
+    status
+    paymentStatus
+  }
+}
+```
+
+#### Sinkronisasi booking dari External Booking Service (mock/partner)
+- Prasyarat: booking sudah ada di `external-booking-service`.
+
+```graphql
+mutation {
+  syncExternalBooking(externalBookingId: "3") {
+    id
+    flightCode
+    passengerName
+    externalBookingId
+    status
+  }
+}
+```
+
+#### Sinkronisasi booking dari Kelompok2/Travel App
+- Pastikan `.env` mengarah ke GraphQL booking partner, contoh:
+  - `KELOMPOK2_BOOKING_SERVICE=http://IP_LAPTOP_TRAVEL:4003/` (LAN)
+  - atau `KELOMPOK2_BOOKING_SERVICE=https://xxxxx.ngrok-free.app/booking/` (via edge-proxy)
+
+```graphql
+mutation {
+  syncKelompok2Booking(externalBookingId: 3) {
+    id
+    flightCode
+    passengerName
+    externalBookingId
+    status
+  }
+}
+```
+
+#### Query partnerImportedBookings (butuh x-api-key)
+Header:
+- `x-api-key: <PARTNER_API_KEY>`
+
+```graphql
+query {
+  partnerImportedBookings {
+    id
+    flightCode
+    passengerName
+    externalBookingId
+    status
+  }
+}
+```
+
+#### partnerBookingByExternalId (butuh x-api-key)
+```graphql
+query {
+  bookingByExternalId(externalBookingId: "3") {
+    id
+    flightCode
+    passengerName
+    status
+  }
+}
+```
+
+> `externalBookingById` dan `kelompok2BookingById` biasanya untuk debug (cek data sumber).
+
+---
+
+### 8.4 Parcel Service (juga tersedia lewat Gateway)
+Endpoint (direct): `http://localhost:4004/`
+
+Header:
+- via gateway: `Authorization: Bearer <token>`
+- direct: `user-id: <id>`
+
+#### Buat parcel order
+```graphql
+mutation {
+  createParcelOrder(
+    bookingId: 1
+    receiverName: "Andi"
+    receiverAddress: "Jl. Mawar No. 1"
+    itemDescription: "Laptop"
+    weight: 2.5
+  ) {
+    id
+    status
+  }
+}
+```
+
+#### List parcel order user
+```graphql
+query {
+  myParcelOrders {
+    id
+    receiverName
+    receiverAddress
+    itemDescription
+    weight
+    status
+    bookingId
+  }
+}
+```
+
+#### Update status parcel
+```graphql
+mutation {
+  updateParcelOrderStatus(id: 1, status: "IN_TRANSIT") {
+    id
+    status
+  }
+}
+```
+
+---
+
+### 8.5 Onboard Service (juga tersedia lewat Gateway)
+Endpoint (direct): `http://localhost:4005/`
+
+Header:
+- via gateway: `Authorization: Bearer <token>`
+- direct: `user-id: <id>`
+
+#### Lihat menu
+```graphql
+query {
+  menus {
+    id
+    name
+    price
+  }
+}
+```
+
+#### Tambah menu item
+```graphql
+mutation {
+  createMenuItem(name: "Nasi Goreng", price: 35000) {
+    id
+    name
+    price
+  }
+}
+```
+
+#### Buat order onboard
+```graphql
+mutation {
+  createOnboardOrder(bookingId: 1, menuId: 1, quantity: 2) {
+    id
+    bookingId
+    menuId
+    quantity
     totalPrice
     status
   }
 }
 ```
 
-## Integrasi Lintas Kelompok
-
-Sistem ini dirancang untuk mendukung integrasi lintas kelompok:
-
-- **Sebagai Consumer**: Flight Booking Service dapat mengkonsumsi External Booking Service dari kelompok lain untuk mengambil dan sinkronisasi booking
-- **Sebagai Provider**: 
-  - Auth Service menyediakan endpoint GraphQL untuk validasi identitas pengguna lintas sistem
-  - Flight Booking Service menyediakan endpoint untuk melihat booking yang dibuat di sistem JMK AIR
-
-### Dokumentasi Lengkap
-
-Lihat file **[INTEGRASI_LINTAS_KELOMPOK.md](./INTEGRASI_LINTAS_KELOMPOK.md)** untuk dokumentasi lengkap tentang:
-- Cara mengkonsumsi endpoint dari kelompok lain
-- Cara menyediakan endpoint untuk kelompok lain
-- Contoh queries dan mutations
-- Konfigurasi network dan environment variables
-- Troubleshooting
-
-### Contoh Integrasi sebagai Consumer
-
-Flight Booking Service dapat mengambil booking dari kelompok lain:
-
+#### List order user
 ```graphql
-# Mengambil booking dari kelompok lain
 query {
-  externalBookingById(externalBookingId: "123") {
+  onboardOrders {
     id
-    bookingCode
-    passengerName
+    menuId
+    quantity
+    totalPrice
     status
   }
 }
+```
 
-# Sinkronisasi booking dari kelompok lain
+#### Update status order
+```graphql
 mutation {
-  syncExternalBooking(externalBookingId: "123") {
+  updateOnboardOrderStatus(id: 1, status: "SERVED") {
     id
-    passengerName
     status
-    externalBookingId
   }
 }
 ```
 
-### Contoh Endpoint sebagai Provider
+> Onboard order akan valid jika `bookingId` milik user dan status booking sudah sesuai aturan di service.
 
-Auth Service menyediakan endpoint untuk kelompok lain:
+---
 
+### 8.6 External Booking Service (Mock/Partner) — Endpoint Terpisah
+Endpoint: `http://localhost:5000/`
+
+Header wajib:
+- `user-id: <id>` (contoh `1`)
+
+#### Create booking (di partner/mock)
+```graphql
+mutation {
+  createBooking(type: "FLIGHT", flightCode: "GA-123", passengerName: "Budi") {
+    id
+    type
+    status
+    flightCode
+    passengerName
+  }
+}
+```
+
+#### List booking user (di partner/mock)
 ```graphql
 query {
-  userById(id: "1") {
+  myBookings {
     id
-    username
-    fullName
-    role
+    flightCode
+    passengerName
+    status
   }
 }
 ```
 
-## Database
+> Setelah ada booking di sini, Anda bisa tarik ke sistem maskapai memakai `syncExternalBooking` di flight-booking-service.
 
-Setiap service memiliki database PostgreSQL terpisah:
+---
 
-- `auth_db` - Auth Service
-- `flight_schedule_db` - Flight Schedule Service
-- `flight_booking_db` - Flight Booking Service
-- `parcel_db` - Parcel Service
-- `onboard_db` - Onboard Service
+## 9) Integrasi Jarak Jauh via Internet (Ngrok)
 
-Data akan persisten dalam Docker volumes.
+Ada 2 cara umum:
 
-## Environment Variables
+### Cara 1 — Expose langsung port service
+- `ngrok http 4002` untuk schedule
+- `ngrok http 4003` untuk booking
 
-Default environment variables sudah diset di `docker-compose.yml`. Untuk production, disarankan menggunakan file `.env` atau secrets management.
+Lalu di Travel App set:
+- `AIRLINE_FLIGHT_SCHEDULE_SERVICE=<URL_NGROK_4002>`
+- `AIRLINE_FLIGHT_BOOKING_SERVICE=<URL_NGROK_4003>`
 
-## Testing
+### Cara 2 — Expose 1 port lewat edge-proxy (lebih rapi)
+Repo ini menyediakan nginx `edge-proxy` di port `8080`:
+- `http://localhost:8080/healthz` → ok
+- `http://localhost:8080/schedule/` → proxy ke schedule service
+- `http://localhost:8080/booking/` → proxy ke booking service
 
-Untuk testing, gunakan GraphQL Playground di http://localhost:4000/graphql dan ikuti contoh queries di folder `queries/`.
+Expose dengan ngrok:
+```bash
+ngrok http 8080
+```
 
-## Troubleshooting
+Di Travel App set:
+- `AIRLINE_FLIGHT_SCHEDULE_SERVICE=https://<NGROK_BASE>/schedule/`
+- `AIRLINE_FLIGHT_BOOKING_SERVICE=https://<NGROK_BASE>/booking/`
 
-1. **Service tidak bisa connect ke database**: Pastikan database container sudah healthy sebelum service container start
-2. **Port sudah digunakan**: Ubah port di `docker-compose.yml` jika diperlukan
-3. **Token tidak valid**: Pastikan menggunakan token yang valid dari login dan set header `Authorization: Bearer <token>`
+---
 
-## Kontributor
+## 10) Troubleshooting
 
-- Ahmad Dzulfikar (102022300009)
-- Jhonata Fernanda (102022300052)
-- Keiko Kesha Zakir Heryadi (102022300071)
-- Zahran Athallah Syafiq (102022300081)
+### `Unauthorized partner`
+- Pastikan header `x-api-key` dikirim.
+- Pastikan nilainya sama dengan `.env` → `PARTNER_API_KEY`.
 
-## License
+### `ERR_NGROK_8012` / `connection refused`
+- Service belum jalan / port salah.
+- Cek `docker compose ps` dan pastikan portnya LISTEN.
 
-Proyek ini dibuat untuk keperluan akademik.
+### `http://localhost:8080/healthz` 404 tapi servernya Apache/IIS
+- Port 8080 dipakai Apache/XAMPP/IIS.
+- Matikan service itu, lalu restart docker compose.
 
+### Query kosong (array `[]`)
+- Itu berarti tidak ada data untuk user tersebut (cek `user-id`/JWT yang dipakai).
+- Untuk booking partner, pastikan sudah menjalankan `syncExternalBooking` / `syncKelompok2Booking` terlebih dahulu.
+
+---
+
+## 11) Catatan
+- Banyak file dokumentasi versi lama sudah dihapus dari paket ini agar tidak membingungkan.
+- Bila ingin demo cepat: pakai gateway (`http://localhost:4000/`) + flow register → login → gunakan token untuk query/mutation lainnya.

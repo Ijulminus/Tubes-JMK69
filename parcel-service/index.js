@@ -2,11 +2,13 @@
 const { ApolloServer, gql } = require('apollo-server');
 const { buildSubgraphSchema } = require('@apollo/subgraph');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
 const { connectDB } = require('./db');
 const ParcelOrder = require('./models/ParcelOrder');
 
 connectDB();
 
+const JWT_SECRET = process.env.JWT_SECRET || 'RAHASIA_NEGARA';
 const FLIGHT_BOOKING_SERVICE = process.env.FLIGHT_BOOKING_SERVICE || 'http://flight-booking-service:4003';
 
 const typeDefs = gql`
@@ -42,19 +44,21 @@ const typeDefs = gql`
       weight: Float!
       dimensions: String
     ): ParcelOrder
-    
+
     updateParcelOrderStatus(id: ID!, status: String!): ParcelOrder
   }
 `;
 
+function requireAuth(context) {
+  if (context.isAuthenticated !== true) throw new Error('Unauthorized');
+}
+
 // Helper function untuk validasi booking
-async function validateBooking(bookingId, userId) {
+async function validateBooking(bookingId, authorization) {
   try {
-    const headers = {
-      'Content-Type': 'application/json',
-      'user-id': userId.toString()
-    };
-    
+    const headers = { 'Content-Type': 'application/json' };
+    if (authorization) headers['authorization'] = authorization;
+
     const response = await axios.post(
       `${FLIGHT_BOOKING_SERVICE}`,
       {
@@ -71,18 +75,13 @@ async function validateBooking(bookingId, userId) {
       },
       { headers }
     );
-    
-    if (response.data.errors) {
-      throw new Error(response.data.errors[0].message);
-    }
-    
-    if (!response.data.data || !response.data.data.bookingById) {
-      throw new Error('Booking tidak ditemukan');
-    }
-    
+
+    if (response.data.errors) throw new Error(response.data.errors[0].message);
+    if (!response.data.data?.bookingById) throw new Error('Booking tidak ditemukan');
+
     return response.data.data.bookingById;
   } catch (error) {
-    if (error.response && error.response.data && error.response.data.errors) {
+    if (error.response?.data?.errors?.length) {
       throw new Error(`Booking tidak valid: ${error.response.data.errors[0].message}`);
     }
     if (error.code === 'ECONNREFUSED') {
@@ -93,12 +92,10 @@ async function validateBooking(bookingId, userId) {
 }
 
 // Fungsi untuk menghitung biaya pengiriman
-function calculateCost(weight, flightCode) {
-  // Base cost per kg
+function calculateCost(weight) {
   const baseCostPerKg = 50000;
-  // Minimum cost
   const minCost = 100000;
-  
+
   const calculatedCost = parseFloat(weight) * baseCostPerKg;
   return Math.max(calculatedCost, minCost);
 }
@@ -106,35 +103,32 @@ function calculateCost(weight, flightCode) {
 const resolvers = {
   Query: {
     myParcelOrders: async (_, __, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
+      requireAuth(context);
       return await ParcelOrder.findAll({ where: { userId: context.userId } });
     },
+
     parcelOrderById: async (_, { id }, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
+      requireAuth(context);
+
       const order = await ParcelOrder.findByPk(id);
-      if (!order || order.userId !== context.userId) {
-        throw new Error('Parcel order tidak ditemukan');
-      }
+      if (!order || order.userId !== context.userId) throw new Error('Parcel order tidak ditemukan');
       return order;
     }
   },
+
   Mutation: {
     createParcelOrder: async (_, args, context) => {
-      if (!context.userId) throw new Error('Anda harus login!');
-      
+      requireAuth(context);
+
       // Jika ada bookingId, validasi booking
       if (args.bookingId) {
-        const booking = await validateBooking(args.bookingId, context.userId);
-        if (booking.status !== 'CONFIRMED') {
-          throw new Error('Booking harus dalam status CONFIRMED');
-        }
+        const booking = await validateBooking(args.bookingId, context.authorization);
+        if (booking.status !== 'CONFIRMED') throw new Error('Booking harus dalam status CONFIRMED');
         args.flightCode = booking.flightCode;
       }
-      
-      // Hitung biaya
-      const cost = calculateCost(args.weight, args.flightCode);
-      
-      // Buat parcel order
+
+      const cost = calculateCost(args.weight);
+
       const parcelOrder = await ParcelOrder.create({
         ...args,
         userId: context.userId,
@@ -142,21 +136,18 @@ const resolvers = {
         status: 'PENDING',
         paymentStatus: 'UNPAID'
       });
-      
+
       return parcelOrder;
     },
-    
+
     updateParcelOrderStatus: async (_, { id, status }, context) => {
-      if (!context.userId) throw new Error('Unauthorized');
-      
+      requireAuth(context);
+
       const order = await ParcelOrder.findByPk(id);
-      if (!order || order.userId !== context.userId) {
-        throw new Error('Parcel order tidak ditemukan');
-      }
-      
+      if (!order || order.userId !== context.userId) throw new Error('Parcel order tidak ditemukan');
+
       order.status = status;
       await order.save();
-      
       return order;
     }
   }
@@ -165,11 +156,24 @@ const resolvers = {
 const server = new ApolloServer({
   schema: buildSubgraphSchema({ typeDefs, resolvers }),
   context: ({ req }) => {
-    return { userId: req.headers['user-id'] };
+    const authorization = req.headers.authorization || '';
+    if (!authorization) return { userId: null, userRole: null, isAuthenticated: false, authorization: '' };
+
+    try {
+      const token = authorization.replace(/^Bearer\s+/i, '');
+      const decoded = jwt.verify(token, JWT_SECRET);
+      return {
+        userId: decoded.id ?? decoded.userId,
+        userRole: decoded.role,
+        isAuthenticated: true,
+        authorization: `Bearer ${token}`
+      };
+    } catch (e) {
+      return { userId: null, userRole: null, isAuthenticated: false, authorization };
+    }
   }
 });
 
-server.listen({ port: 4004 }).then(({ url }) => {
+server.listen({ port: 4004, host: '0.0.0.0' }).then(({ url }) => {
   console.log(`🚀 Parcel Service ready at ${url}`);
 });
-

@@ -5,15 +5,25 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'RAHASIA_NEGARA';
 
-// Kelas Custom untuk meneruskan Header Authentication
+// Custom DataSource untuk meneruskan header auth (Authorization) + x-api-key ke semua subgraph
 class AuthenticatedDataSource extends RemoteGraphQLDataSource {
   willSendRequest({ request, context }) {
-    // Jika di Gateway sudah berhasil decode user, kirim ID-nya ke service bawahan
-    if (context.userId) {
-      request.http.headers.set('user-id', context.userId);
+    // Forward Authorization (JWT)
+    if (context.authorization) {
+      request.http.headers.set('authorization', context.authorization);
+    }
+
+    // Forward partner key jika ada
+    if (context.apiKey) {
+      request.http.headers.set('x-api-key', context.apiKey);
+    }
+
+    // Backward compatibility: forward user-id/user-role juga (beberapa service lama pakai ini)
+    if (context.userId !== undefined && context.userId !== null) {
+      request.http.headers.set('user-id', String(context.userId));
     }
     if (context.userRole) {
-      request.http.headers.set('user-role', context.userRole);
+      request.http.headers.set('user-role', String(context.userRole));
     }
   }
 }
@@ -28,7 +38,7 @@ const gateway = new ApolloGateway({
       { name: 'onboard', url: 'http://onboard-service:4005' },
     ],
   }),
-  buildService({ name, url }) {
+  buildService({ url }) {
     return new AuthenticatedDataSource({ url });
   },
 });
@@ -36,29 +46,37 @@ const gateway = new ApolloGateway({
 const server = new ApolloServer({
   gateway,
   subscriptions: false,
-  // Context Gateway: Cek Token di sini!
   context: ({ req }) => {
-    const token = req.headers.authorization || '';
-    if (token) {
+    const authorization = req.headers.authorization || '';
+    const apiKey = req.headers['x-api-key'] || '';
+
+    let userId = null;
+    let userRole = null;
+    let username = null;
+
+    if (authorization) {
       try {
-        // Hapus 'Bearer ' jika ada
-        const actualToken = token.replace('Bearer ', '');
+        const actualToken = authorization.replace(/^Bearer\s+/i, '');
         const decoded = jwt.verify(actualToken, JWT_SECRET);
-        return { 
-          userId: decoded.id || decoded.userId,
-          userRole: decoded.role,
-          username: decoded.username
-        };
+        userId = decoded.id ?? decoded.userId ?? null;
+        userRole = decoded.role ?? null;
+        username = decoded.username ?? null;
       } catch (e) {
-        // Token tidak valid, biarkan saja (mungkin user tamu)
-        console.log('Token verification failed:', e.message);
+        // token invalid -> subgraph akan handle unauthorized
+        console.log('Token verification failed at gateway:', e.message);
       }
     }
-    return {};
+
+    return {
+      authorization,
+      apiKey,
+      userId,
+      userRole,
+      username
+    };
   }
 });
 
-server.listen({ port: 4000 }).then(({ url }) => {
+server.listen({ port: 4000, host: '0.0.0.0' }).then(({ url }) => {
   console.log(`🚀 Gateway ready at ${url}`);
 });
-
